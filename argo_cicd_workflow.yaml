@@ -1,0 +1,83 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: register-flyte-pipeline-
+spec:
+  entrypoint: pipeline
+  templates:
+  - name: pipeline
+    steps:
+    - - name: clone-repo
+        template: git-clone
+    - - name: register-and-run
+        arguments:
+          artifacts:
+            - name: home-dir
+              from: "{{steps.clone-repo.outputs.artifacts.home}}"
+          parameters:
+            - name: version
+              value: "{{steps.clone-repo.outputs.result}}"
+        template: register-and-run
+  - name: git-clone
+    inputs:
+      artifacts:
+      - name: argo-source
+        path: /src
+        git:
+          repo: $GITHUB_REPO
+          revision: HEAD
+          usernameSecret:
+            name: github-creds
+            key: username
+          passwordSecret:
+            name: github-creds
+            key: password
+    script:
+      image: bitnami/git:2.34.1
+      command: [bash]
+      source: |
+        git show -s --format=%h-$${q}RANDOM
+      workingDir: /src
+    outputs:
+      artifacts:
+        - name: home
+          path: /src
+  - name: register-and-run
+    inputs:
+      artifacts:  
+      - name: home-dir
+        path: /src
+      parameters:
+      - name: version
+    script:
+      image: k3d-registry.localhost:5000/workflow:latest
+      command: [bash]
+      source: |
+        pyflyte --pkgs flytesnacks.workflows.$WORKFLOW package --fast --source . --image k3d-registry.localhost:5000/workflow:latest -f
+
+        cat > config.yaml <<'_EOF'
+        admin:
+          # For GRPC endpoints you might want to use dns:///flyte.myexample.com
+          endpoint: dns:///flyteadmin.flyte.svc.cluster.local:81
+          authType: Pkce
+          insecure: true
+        logger:
+          show-source: true
+          level: 0
+        storage:
+          connection:
+            access-key: minio
+            auth-type: accesskey
+            disable-ssl: true
+            endpoint: http://minio.flyte.svc.cluster.local:9000
+            region: us-east-1
+            secret-key: miniostorage
+          type: minio
+          container: "my-s3-bucket"
+          enable-multicontainer: true
+        _EOF
+
+        flytectl --config config.yaml register files --project flytesnacks --domain development --archive flyte-package.tgz --version {{inputs.parameters.version}}
+        flytectl --config config.yaml get launchplan --project flytesnacks --domain development flytesnacks.workflows.$WORKFLOW.pipeline --latest --execFile exec_spec.yaml
+        flytectl --config config.yaml create execution --project flytesnacks --domain development --execFile exec_spec.yaml
+      workingDir: /src      

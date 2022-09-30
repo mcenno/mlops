@@ -1,0 +1,12 @@
+flytekit>=0.20.0
+awscli
+boto3
+elasticsearch<7.14.0
+mlflow
+minio
+sklearn
+pandas
+matplotlib
+kubernetes
+ruamel.yaml
+PyGithub

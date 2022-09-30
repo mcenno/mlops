@@ -1,0 +1,10 @@
+flytekit>=0.20.0
+awscli
+boto3
+mlflow
+minio
+sklearn
+alibi==0.6.2
+shap==0.40.0
+numba==0.51.2
+pickle5==0.0.12
